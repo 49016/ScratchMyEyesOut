@@ -72,6 +72,7 @@ struct ParserConfig {
     uint32_t max_age_seconds = 0;
     bool show_help = false;
     bool show_version = false;
+    bool trust_auth = false;  // Skip authentication (TRUST mode for CTF setup)
 };
 
 struct HandoffInfo {
@@ -185,6 +186,8 @@ bool parseArgs(int argc, char* argv[], ParserConfig& config) {
             config.log_level = argv[++i];
         } else if (arg.rfind("--log-level=", 0) == 0) {
             config.log_level = arg.substr(12);
+        } else if (arg == "--trust-auth") {
+            config.trust_auth = true;
         } else {
             std::cerr << "Unknown option: " << arg << "\n";
             return false;
@@ -558,6 +561,9 @@ uint32_t runSession(const ParserConfig& config,
     scratchbird::protocol::ProtocolAdapterConfig adapter_config;
     adapter_config.engine_endpoint = config.engine_endpoint;
     adapter_config.default_database = config.default_database;
+    if (config.trust_auth) {
+        adapter_config.require_authentication = false;
+    }
     const bool has_db_uuid_binding =
         info.has_binding_context && hasNonZeroBytes(info.db_uuid);
     const bool manager_bound =
