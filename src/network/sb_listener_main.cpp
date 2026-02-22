@@ -94,6 +94,7 @@ struct ListenerConfig {
     uint32_t dbbt_clock_skew_ms = 2000;
     uint32_t dbbt_replay_cache_size = 4096;
     bool require_proxy_binding = false;
+    bool trust_auth = false;  // Pass --trust-auth to spawned parsers
 };
 
 std::string toUpperAscii(std::string value) {
@@ -849,6 +850,9 @@ private:
             args.push_back("--tls-config");
             args.push_back(config_.tls_config);
         }
+        if (config_.trust_auth) {
+            args.push_back("--trust-auth");
+        }
 
 #ifdef _WIN32
         std::string command_line;
@@ -1599,6 +1603,8 @@ bool applyArgOverrides(int argc, char* argv[], ListenerConfig& config) {
             if (normalizeListenerModeToken(config.listener_mode) == "DIRECT") {
                 config.listener_mode = "managed";
             }
+        } else if (arg == "--trust-auth") {
+            config.trust_auth = true;
         }
     }
     return true;
