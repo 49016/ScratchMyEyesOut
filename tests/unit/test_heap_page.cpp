@@ -416,3 +416,36 @@ TEST_F(HeapPageTest, MultiplePageSizeCorruptions)
             << "Should correct page size from " << corrupted_size << " to " << page_size_;
     }
 }
+
+// Test: Alignment round-down must not push tuple into item-pointer area (OOB write fix)
+TEST_F(HeapPageTest, AlignmentDoesNotOverlapItemPointers)
+{
+    HeapPage page(page_buffer_, page_size_);
+    ASSERT_EQ(page.initialize(1, nullptr), Status::OK);
+
+    // Fill the page with unaligned-size tuples until it is full.
+    // The 8-byte alignment round-down could previously push the tuple
+    // offset below pageLower, overwriting item pointers.
+    ErrorContext ctx;
+    int inserted = 0;
+    while (true)
+    {
+        // sizeof(TupleHeader) + 5 is deliberately not 8-byte aligned
+        std::vector<uint8_t> tuple_data(sizeof(TupleHeader) + 5, 0xBB);
+        uint16_t item_id;
+        Status s = page.insertTuple(tuple_data.data(), tuple_data.size(),
+                                    100 + inserted, &item_id, &ctx);
+        if (s != Status::OK)
+        {
+            break;
+        }
+        inserted++;
+    }
+
+    EXPECT_GT(inserted, 0) << "Should have inserted at least one tuple";
+
+    // Every insert must have either succeeded or returned a clean error;
+    // the page itself must remain structurally valid.
+    Status validate_status = page.validate(&ctx);
+    EXPECT_EQ(validate_status, Status::OK) << "Page should be valid after filling";
+}
