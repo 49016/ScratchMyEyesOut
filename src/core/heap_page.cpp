@@ -337,10 +337,22 @@ namespace scratchbird::core
         tuple_offset = (tuple_offset / 8) * 8;
 
         // Validate offset is within page bounds
-        if (tuple_offset + actual_tuple_size > page_size_)
+        // Check both upper bound and lower bound (aligned offset must not
+        // overlap the item-pointer area).  The update path already performs
+        // this check; the insert path was missing the lower-bound test which
+        // allowed the alignment round-down to push the tuple into the
+        // item-pointer region — an out-of-bounds write.
+        uint32_t effective_lower = pageLower(*hdr);
+        if (item_id == getItemCount())
         {
-            SET_ERROR_CONTEXT(ctx, Status::PAGE_CORRUPT, "Tuple offset out of bounds");
-            return Status::PAGE_CORRUPT;
+            effective_lower += sizeof(ItemPointer);
+        }
+        if (tuple_offset + actual_tuple_size > page_size_ ||
+            tuple_offset < effective_lower)
+        {
+            SET_ERROR_CONTEXT(ctx, Status::PAGE_FULL,
+                              "Not enough aligned space for tuple");
+            return Status::PAGE_FULL;
         }
 
         // Copy tuple data and initialize header
@@ -923,10 +935,12 @@ namespace scratchbird::core
             back_version_offset = (back_version_offset / 8) * 8;
 
             // Validate offset is within page bounds
-            if (back_version_offset + primary_length > page_size_)
+            if (back_version_offset + primary_length > page_size_ ||
+                back_version_offset < pageLower(*hdr))
             {
-                SET_ERROR_CONTEXT(ctx, Status::PAGE_CORRUPT, "Back version offset out of bounds");
-                return Status::PAGE_CORRUPT;
+                SET_ERROR_CONTEXT(ctx, Status::PAGE_FULL,
+                                  "Not enough aligned space for back version");
+                return Status::PAGE_FULL;
             }
 
             // Copy old tuple to back version location
@@ -1145,10 +1159,12 @@ namespace scratchbird::core
             new_offset = (new_offset / 8) * 8;
 
             // Validate offset
-            if (new_offset + final_new_tuple_size > page_size_)
+            if (new_offset + final_new_tuple_size > page_size_ ||
+                new_offset < pageLower(*hdr))
             {
-                SET_ERROR_CONTEXT(ctx, Status::PAGE_CORRUPT, "New tuple offset out of bounds");
-                return Status::PAGE_CORRUPT;
+                SET_ERROR_CONTEXT(ctx, Status::PAGE_FULL,
+                                  "Not enough aligned space for larger tuple");
+                return Status::PAGE_FULL;
             }
 
             // Copy new tuple to new location
